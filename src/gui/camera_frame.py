@@ -397,16 +397,19 @@ class CameraFrame(ttk.Frame):
             # Update result values
             self.age_value.config(text=f"{result.get('age', 'N/A')} years")
             
-            gender = result.get('gender', 'N/A')
-            gender_confidence = result.get('gender_confidence', 0) * 100
+            # For gender, use dominant_gender and its confidence from the gender dict
+            gender = result.get('dominant_gender', 'N/A')
+            gender_confidence = result.get('gender', {}).get(gender, 0)
             self.gender_value.config(text=f"{gender} ({gender_confidence:.1f}%)")
             
+            # For emotion, use dominant_emotion and its confidence from the emotion dict
             emotion = result.get('dominant_emotion', 'N/A')
-            emotion_confidence = result.get('emotion', {}).get(emotion, 0) * 100
+            emotion_confidence = result.get('emotion', {}).get(emotion, 0)
             self.emotion_value.config(text=f"{emotion.capitalize()} ({emotion_confidence:.1f}%)")
             
+            # For race, use dominant_race and its confidence from the race dict
             race = result.get('dominant_race', 'N/A')
-            race_confidence = result.get('race', {}).get(race, 0) * 100
+            race_confidence = result.get('race', {}).get(race, 0)
             self.race_value.config(text=f"{race.capitalize()} ({race_confidence:.1f}%)")
             
             # Enable save and show all buttons
