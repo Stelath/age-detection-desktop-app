@@ -13,7 +13,7 @@ import numpy as np
 from datetime import datetime
 
 from src.camera import Camera
-from src.analysis import FaceAnalyzer
+from src.analysis import FaceAnalyzer, ModelLoader
 
 class CameraFrame(ttk.Frame):
     """
@@ -52,11 +52,63 @@ class CameraFrame(ttk.Frame):
         # Create main layout
         self.columnconfigure(0, weight=1)  # Camera view column
         self.columnconfigure(1, weight=1)  # Results column
-        self.rowconfigure(0, weight=1)     # Main content row
+        self.rowconfigure(0, weight=0)     # Model selection row
+        self.rowconfigure(1, weight=1)     # Main content row
+        
+        # Model selection frame
+        self.model_frame = ttk.LabelFrame(self, text="Model Settings")
+        self.model_frame.grid(row=0, column=0, columnspan=2, padx=10, pady=(10, 0), sticky="ew")
+        
+        # Model selection options
+        self.model_options = ttk.Frame(self.model_frame)
+        self.model_options.pack(fill=tk.X, padx=10, pady=10)
+        
+        # Face detector selection
+        self.detector_frame = ttk.Frame(self.model_options)
+        self.detector_frame.pack(side=tk.LEFT, padx=(0, 20))
+        
+        self.detector_label = ttk.Label(self.detector_frame, text="Face Detector:")
+        self.detector_label.pack(side=tk.LEFT, padx=(0, 5))
+        
+        self.detector_var = tk.StringVar(value="opencv")
+        self.detector_combo = ttk.Combobox(
+            self.detector_frame,
+            textvariable=self.detector_var,
+            values=["opencv", "retinaface", "mtcnn", "ssd"],
+            width=10,
+            state="readonly"
+        )
+        self.detector_combo.pack(side=tk.LEFT)
+        self.detector_combo.bind("<<ComboboxSelected>>", self._update_detector)
+        
+        # Face recognition model selection
+        self.model_frame = ttk.Frame(self.model_options)
+        self.model_frame.pack(side=tk.LEFT, padx=(0, 20))
+        
+        self.model_label = ttk.Label(self.model_frame, text="Recognition Model:")
+        self.model_label.pack(side=tk.LEFT, padx=(0, 5))
+        
+        self.model_var = tk.StringVar(value="Facenet512")
+        self.model_combo = ttk.Combobox(
+            self.model_frame,
+            textvariable=self.model_var,
+            values=["VGG-Face", "Facenet", "Facenet512", "OpenFace", "DeepFace", "ArcFace"],
+            width=10,
+            state="readonly"
+        )
+        self.model_combo.pack(side=tk.LEFT)
+        
+        # Preload models button
+        self.preload_btn = ttk.Button(
+            self.model_options,
+            text="Preload Models",
+            command=self._preload_models
+        )
+        self.preload_btn.pack(side=tk.RIGHT, padx=(0, 10))
         
         # Left side - Camera View
         self.camera_frame = ttk.LabelFrame(self, text="Camera Feed")
-        self.camera_frame.grid(row=0, column=0, padx=10, pady=10, sticky="nsew")
+        self.camera_frame.grid(row=1, column=0, padx=10, pady=10, sticky="nsew")
         
         # Camera canvas
         self.canvas = tk.Canvas(self.camera_frame, bg="black", width=480, height=360)
@@ -92,7 +144,7 @@ class CameraFrame(ttk.Frame):
         
         # Right side - Results View
         self.results_frame = ttk.LabelFrame(self, text="Analysis Results")
-        self.results_frame.grid(row=0, column=1, padx=10, pady=10, sticky="nsew")
+        self.results_frame.grid(row=1, column=1, padx=10, pady=10, sticky="nsew")
         
         # Status label
         self.status_label = ttk.Label(
@@ -449,6 +501,45 @@ class CameraFrame(ttk.Frame):
                     f"Error saving image: {str(e)}"
                 )
                 
+    def _update_detector(self, event=None):
+        """
+        Update the face detector when the selection changes.
+        
+        Args:
+            event: The event that triggered the update
+        """
+        detector = self.detector_var.get()
+        self.face_analyzer.detector_backend = detector
+        print(f"Face detector changed to: {detector}")
+        
+    def _preload_models(self):
+        """
+        Preload the models to avoid delays during analysis.
+        """
+        # Disable the button during loading
+        self.preload_btn.config(state=tk.DISABLED)
+        self.status_label.config(text="Loading models...")
+        
+        # Create model loader with progress dialog
+        model_loader = ModelLoader(self)
+        
+        # Start loading models
+        model_loader.load_models(
+            actions=['age', 'gender', 'emotion', 'race'],
+            callback=self._on_models_loaded
+        )
+        
+    def _on_models_loaded(self):
+        """
+        Callback for when models are loaded.
+        """
+        self.preload_btn.config(state=tk.NORMAL)
+        self.status_label.config(text="Models loaded")
+        self.main_window.show_info(
+            "Models Loaded",
+            "All models have been successfully loaded!"
+        )
+        
     def show_all_results(self):
         """
         Show all analysis results in a new window.
@@ -475,7 +566,18 @@ class CameraFrame(ttk.Frame):
         
         # Insert the results
         import json
-        text_widget.insert(tk.END, json.dumps(self.analysis_result, indent=4))
+        
+        # Convert numpy arrays to lists for JSON serialization
+        result_copy = {}
+        for key, value in self.analysis_result.items():
+            if isinstance(value, dict):
+                result_copy[key] = {k: float(v) if hasattr(v, 'item') else v for k, v in value.items()}
+            elif hasattr(value, 'tolist') and callable(getattr(value, 'tolist')):
+                result_copy[key] = value.tolist()
+            else:
+                result_copy[key] = value
+        
+        text_widget.insert(tk.END, json.dumps(result_copy, indent=4))
         text_widget.config(state=tk.DISABLED)  # Make read-only
         
         # Add a close button
