@@ -37,7 +37,10 @@ class CameraFrame(ttk.Frame):
         # Frame state variables
         self.is_camera_running = False
         self.is_analyzing = False
+        self.is_image_frozen = False  # Flag to indicate if we've frozen an image
         self.current_frame = None
+        self.frozen_frame = None
+        self.visualization_frame = None
         self.analysis_result = None
         self.update_thread = None
         self.frame_update_running = False
@@ -313,6 +316,11 @@ class CameraFrame(ttk.Frame):
         """
         while self.frame_update_running and self.camera:
             try:
+                # Skip frame updates if an image is frozen
+                if self.is_image_frozen:
+                    time.sleep(0.1)  # Longer sleep when frozen
+                    continue
+                
                 # Get frame from camera
                 frame = self.camera.get_frame()
                 
@@ -362,6 +370,7 @@ class CameraFrame(ttk.Frame):
             
         # Make a copy of the current frame to freeze it
         self.frozen_frame = self.current_frame.copy()
+        self.is_image_frozen = True  # Set flag to stop live updates
         
         # Disable the button during analysis
         self.capture_btn.config(state=tk.DISABLED)
@@ -377,6 +386,8 @@ class CameraFrame(ttk.Frame):
         # Clear the analysis result
         self.analysis_result = None
         self.frozen_frame = None
+        self.visualization_frame = None
+        self.is_image_frozen = False  # Allow live updates again
         
         # Reset UI elements
         self.face_status_value.config(text="Not detected", foreground="red")
