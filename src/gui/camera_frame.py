@@ -349,11 +349,20 @@ class CameraFrame(ttk.Frame):
             
     def capture_and_analyze(self):
         """
-        Capture the current frame and analyze it.
+        Capture the current frame and analyze it. If an image is already captured,
+        this will clear it instead.
         """
-        if not self.is_camera_running or not self.current_frame is not None:
+        # If we already have an analysis result, this is now a "Clear" operation
+        if self.analysis_result is not None:
+            self._clear_analysis()
             return
             
+        if not self.is_camera_running or self.current_frame is None:
+            return
+            
+        # Make a copy of the current frame to freeze it
+        self.frozen_frame = self.current_frame.copy()
+        
         # Disable the button during analysis
         self.capture_btn.config(state=tk.DISABLED)
         self.status_label.config(text="Analyzing face...")
@@ -361,17 +370,74 @@ class CameraFrame(ttk.Frame):
         # Start analysis in a separate thread
         threading.Thread(target=self._perform_analysis).start()
         
+    def _clear_analysis(self):
+        """
+        Clear the current analysis and reset the UI.
+        """
+        # Clear the analysis result
+        self.analysis_result = None
+        self.frozen_frame = None
+        
+        # Reset UI elements
+        self.face_status_value.config(text="Not detected", foreground="red")
+        self.age_value.config(text="-")
+        self.gender_value.config(text="-")
+        self.emotion_value.config(text="-")
+        self.race_value.config(text="-")
+        self.confidence_value.config(text="-")
+        
+        # Change button back to "Capture & Analyze"
+        self.capture_btn.config(text="Capture & Analyze")
+        
+        # Disable save and show all buttons
+        self.save_btn.config(state=tk.DISABLED)
+        self.show_all_btn.config(state=tk.DISABLED)
+        
+        self.status_label.config(text="Camera running")
+        
     def _perform_analysis(self):
         """
         Perform face analysis on the current frame.
         """
         try:
-            # Analyze the current frame
+            # Analyze the frozen frame
             result = self.face_analyzer.analyze_face(
-                self.current_frame,
+                self.frozen_frame,
                 actions=['age', 'gender', 'emotion', 'race']
             )
             
+            # If we have a result, draw the face box on the image
+            if result and 'region' in result:
+                # Get face region
+                region = result['region']
+                x, y, w, h = region['x'], region['y'], region['w'], region['h']
+                
+                # Draw rectangle on the frozen frame
+                frame_with_box = self.frozen_frame.copy()
+                cv2.rectangle(frame_with_box, (x, y), (x+w, y+h), (0, 255, 0), 2)
+                
+                # Draw eye positions if available
+                if 'left_eye' in region and 'right_eye' in region:
+                    left_eye = tuple(map(int, region['left_eye']))
+                    right_eye = tuple(map(int, region['right_eye']))
+                    cv2.circle(frame_with_box, left_eye, 5, (255, 0, 0), -1)
+                    cv2.circle(frame_with_box, right_eye, 5, (255, 0, 0), -1)
+                
+                # Add age text at top of bounding box
+                age = result.get('age', 'N/A')
+                gender = result.get('dominant_gender', 'N/A')
+                cv2.putText(frame_with_box, f"Age: {age}, {gender}", (x, y-10),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+                
+                # Store the visualization frame
+                self.visualization_frame = frame_with_box
+                
+                # Display the visualization frame
+                self._update_canvas_with_image(self.visualization_frame)
+            else:
+                # No face region detected, use the frozen frame
+                self.visualization_frame = self.frozen_frame.copy()
+                
             # Update UI with results
             self.after(0, lambda: self._update_results(result))
             
@@ -379,6 +445,45 @@ class CameraFrame(ttk.Frame):
             # Handle errors
             print(f"Analysis error: {str(e)}")
             self.after(0, lambda: self._handle_analysis_error(str(e)))
+            
+    def _update_canvas_with_image(self, frame):
+        """
+        Update the canvas with the given frame.
+        
+        Args:
+            frame: The frame to display
+        """
+        try:
+            # Get canvas dimensions
+            canvas_w = self.canvas.winfo_width()
+            canvas_h = self.canvas.winfo_height()
+            
+            # Get frame dimensions
+            frame_h, frame_w = frame.shape[:2]
+            
+            # Calculate scaling to fit the canvas while maintaining aspect ratio
+            scale = min(canvas_w/frame_w, canvas_h/frame_h)
+            new_w = int(frame_w * scale)
+            new_h = int(frame_h * scale)
+            
+            # Convert and resize the image
+            # Convert BGR to RGB for PIL
+            rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            pil_img = Image.fromarray(rgb_frame)
+            pil_img = pil_img.resize((new_w, new_h), Image.LANCZOS)
+            img_tk = ImageTk.PhotoImage(image=pil_img)
+            
+            # Update canvas
+            self.canvas.delete("all")
+            self.canvas.create_image(
+                canvas_w//2, canvas_h//2, 
+                anchor=tk.CENTER, 
+                image=img_tk
+            )
+            self.canvas.image = img_tk  # Keep a reference
+            
+        except Exception as e:
+            print(f"Error updating canvas: {str(e)}")
             
     def _update_results(self, result):
         """
@@ -411,6 +516,9 @@ class CameraFrame(ttk.Frame):
             race = result.get('dominant_race', 'N/A')
             race_confidence = result.get('race', {}).get(race, 0)
             self.race_value.config(text=f"{race.capitalize()} ({race_confidence:.1f}%)")
+            
+            # Change capture button to "Clear Image"
+            self.capture_btn.config(text="Clear Image")
             
             # Enable save and show all buttons
             self.save_btn.config(state=tk.NORMAL)
@@ -468,9 +576,14 @@ class CameraFrame(ttk.Frame):
         
     def save_image(self):
         """
-        Save the current frame to a file.
+        Save the image with all annotations to a file.
         """
-        if self.current_frame is None:
+        # Use visualization frame if available, otherwise use current frame
+        if hasattr(self, 'visualization_frame') and self.visualization_frame is not None:
+            save_frame = self.visualization_frame
+        elif self.current_frame is not None:
+            save_frame = self.current_frame
+        else:
             return
             
         # Ask for save location
@@ -483,19 +596,30 @@ class CameraFrame(ttk.Frame):
         
         if file_path:
             try:
-                # Save the image
-                cv2.imwrite(file_path, self.current_frame)
+                # Save the image with annotations
+                cv2.imwrite(file_path, save_frame)
                 
                 # Save analysis result as JSON if available
                 if self.analysis_result:
                     json_path = Path(file_path).with_suffix('.json')
                     import json
+                    
+                    # Convert numpy arrays to lists for JSON serialization
+                    result_copy = {}
+                    for key, value in self.analysis_result.items():
+                        if isinstance(value, dict):
+                            result_copy[key] = {k: float(v) if hasattr(v, 'item') else v for k, v in value.items()}
+                        elif hasattr(value, 'tolist') and callable(getattr(value, 'tolist')):
+                            result_copy[key] = value.tolist()
+                        else:
+                            result_copy[key] = value
+                    
                     with open(json_path, 'w') as f:
-                        json.dump(self.analysis_result, f, indent=4)
+                        json.dump(result_copy, f, indent=4)
                         
                 self.main_window.show_info(
                     "Save Successful", 
-                    f"Image saved to {file_path}"
+                    f"Image saved to {file_path}\nJSON data saved to {Path(file_path).with_suffix('.json')}"
                 )
                 
             except Exception as e:
