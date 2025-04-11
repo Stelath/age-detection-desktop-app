@@ -32,7 +32,7 @@ class BatchProcessor:
                        folder_path: Union[str, Path], 
                        actions: List[str] = None, 
                        recursive: bool = False,
-                       max_workers: int = 4,
+                       max_workers: int = 2,  # Reduced workers to prevent memory issues
                        progress_callback: Callable[[int, int, Dict[str, Any]], None] = None) -> Tuple[pd.DataFrame, List[str]]:
         """
         Process all images in a folder.
@@ -133,7 +133,16 @@ class BatchProcessor:
             Optional[Dict[str, Any]]: Analysis result or None if failed
         """
         try:
-            result = self.face_analyzer.analyze_face(file_path, actions)
+            # Create a thread-local face analyzer for each file to avoid resource conflicts
+            # This prevents sharing the analyzer instance across threads which can cause segmentation faults
+            local_analyzer = FaceAnalyzer(
+                detector_backend=self.face_analyzer.detector_backend,
+                enforce_detection=self.face_analyzer.enforce_detection,
+                align=self.face_analyzer.align
+            )
+            
+            # Use the thread-local analyzer
+            result = local_analyzer.analyze_face(file_path, actions)
             if result:
                 result['file_path'] = str(file_path)
                 result['file_name'] = file_path.name

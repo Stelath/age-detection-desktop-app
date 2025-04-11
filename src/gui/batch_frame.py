@@ -158,6 +158,15 @@ class BatchFrame(ttk.Frame):
         )
         self.status_label.pack(anchor=tk.W, padx=10, pady=10)
         
+        # Info label about batch processing limitations
+        self.info_label = ttk.Label(
+            self.progress_frame,
+            text="Note: Batch processing is optimized for stability with limited parallelism.\nThis may increase processing time but prevents memory issues and crashes.",
+            justify=tk.LEFT,
+            foreground="#555555"
+        )
+        self.info_label.pack(anchor=tk.W, padx=10, pady=(0, 10))
+        
         # Progress bar
         self.progress_bar = ttk.Progressbar(self.progress_frame, orient=tk.HORIZONTAL, length=100, mode='determinate')
         self.progress_bar.pack(fill=tk.X, padx=10, pady=(0, 10))
