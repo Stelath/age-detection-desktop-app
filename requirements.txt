@@ -1,0 +1,7 @@
+deepface>=0.0.79
+opencv-python>=4.5.0
+Pillow>=8.0.0
+numpy>=1.19.0
+pandas>=1.1.0
+sv-ttk>=2.0.0
+tf-keras
