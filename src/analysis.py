@@ -127,7 +127,7 @@ class ModelLoader:
             for i, action in enumerate(actions):
                 if self.cancel_flag:
                     break
-                    
+                
                 # Update progress dialog
                 if self.progress_dialog:
                     self.progress_dialog.after(

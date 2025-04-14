@@ -6,6 +6,7 @@ setup(
     description="A desktop application for detecting age from facial images",
     author="age-detection-team",
     packages=find_packages(),
+    py_modules=["main"],
     include_package_data=True,
     install_requires=[
         "deepface>=0.0.79",
