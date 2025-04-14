@@ -44,6 +44,7 @@ class CameraFrame(ttk.Frame):
         self.analysis_result = None
         self.update_thread = None
         self.frame_update_running = False
+        self.available_cameras = []
         
         # Create the UI components
         self._create_widgets()
@@ -117,11 +118,39 @@ class CameraFrame(ttk.Frame):
         self.canvas = tk.Canvas(self.camera_frame, bg="black", width=480, height=360)
         self.canvas.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
         
+        # Camera selection frame
+        self.camera_select_frame = ttk.Frame(self.camera_frame)
+        self.camera_select_frame.pack(fill=tk.X, padx=10, pady=(0, 5))
+        
+        self.camera_select_label = ttk.Label(self.camera_select_frame, text="Camera:")
+        self.camera_select_label.pack(side=tk.LEFT, padx=(0, 5))
+        
+        self.camera_id_var = tk.StringVar(value="0")
+        self.camera_select_combo = ttk.Combobox(
+            self.camera_select_frame,
+            textvariable=self.camera_id_var,
+            width=25,
+            state="readonly"
+        )
+        self.camera_select_combo.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
+        
+        # Add refresh button for camera list
+        self.refresh_cameras_btn = ttk.Button(
+            self.camera_select_frame,
+            text="Refresh",
+            command=self._populate_camera_dropdown,
+            width=8
+        )
+        self.refresh_cameras_btn.pack(side=tk.LEFT)
+        
+        # Populate camera dropdown
+        self._populate_camera_dropdown()
+        
         # Camera controls frame
         self.camera_controls = ttk.Frame(self.camera_frame)
         self.camera_controls.pack(fill=tk.X, padx=10, pady=(0, 10))
         
-        # Camera controls
+        # Camera control buttons
         self.camera_toggle_btn = ttk.Button(
             self.camera_controls, 
             text="Start Camera", 
@@ -253,15 +282,43 @@ class CameraFrame(ttk.Frame):
         else:
             self.stop_camera()
             
+    def _populate_camera_dropdown(self):
+        """
+        Populate the camera selection dropdown with available cameras.
+        """
+        # Get available cameras
+        self.available_cameras = Camera.get_available_cameras()
+        
+        # Create list of camera names for dropdown
+        camera_names = []
+        for camera in self.available_cameras:
+            camera_names.append(f"{camera['name']} (ID: {camera['id']})")
+        
+        # If no cameras found, add a default option
+        if not camera_names:
+            camera_names = ["Default Camera (ID: 0)"]
+            self.available_cameras = [{"id": 0, "name": "Default Camera"}]
+        
+        # Update dropdown values
+        self.camera_select_combo['values'] = camera_names
+        self.camera_select_combo.current(0)  # Select first camera by default
+    
     def start_camera(self):
         """
         Start the camera.
         """
         if self.is_camera_running:
             return
+        
+        # Get selected camera ID
+        selected_index = self.camera_select_combo.current()
+        if selected_index >= 0 and selected_index < len(self.available_cameras):
+            camera_id = self.available_cameras[selected_index]['id']
+        else:
+            camera_id = 0  # Default to camera 0 if no selection
             
-        # Initialize camera object
-        self.camera = Camera()
+        # Initialize camera object with selected camera ID
+        self.camera = Camera(camera_id=camera_id)
         
         # Start the camera
         if self.camera.start():
@@ -417,8 +474,9 @@ class CameraFrame(ttk.Frame):
                 actions=['age', 'gender', 'emotion', 'race']
             )
             
+                
             # If we have a result, draw the face box on the image
-            if result and 'region' in result:
+            if result and isinstance(result, dict) and 'region' in result and result["region"]["left_eye"] != None:
                 # Get face region
                 region = result['region']
                 x, y, w, h = region['x'], region['y'], region['w'], region['h']
@@ -454,8 +512,9 @@ class CameraFrame(ttk.Frame):
             
         except Exception as e:
             # Handle errors
-            print(f"Analysis error: {str(e)}")
-            self.after(0, lambda: self._handle_analysis_error(str(e)))
+            capture_e = e
+            print(f"Analysis error: {str(capture_e)}")
+            self.after(0, lambda: self._handle_analysis_error(str(capture_e)))
             
     def _update_canvas_with_image(self, frame):
         """
@@ -506,7 +565,7 @@ class CameraFrame(ttk.Frame):
         # Store the result
         self.analysis_result = result
         
-        if result:
+        if result and isinstance(result, dict):
             # Face detected
             self.face_status_value.config(text="Detected", foreground="green")
             
@@ -515,17 +574,17 @@ class CameraFrame(ttk.Frame):
             
             # For gender, use dominant_gender and its confidence from the gender dict
             gender = result.get('dominant_gender', 'N/A')
-            gender_confidence = result.get('gender', {}).get(gender, 0)
+            gender_confidence = result.get('gender', {}).get(gender, 0) if result.get('gender') else 0
             self.gender_value.config(text=f"{gender} ({gender_confidence:.1f}%)")
             
             # For emotion, use dominant_emotion and its confidence from the emotion dict
             emotion = result.get('dominant_emotion', 'N/A')
-            emotion_confidence = result.get('emotion', {}).get(emotion, 0)
+            emotion_confidence = result.get('emotion', {}).get(emotion, 0) if result.get('emotion') else 0
             self.emotion_value.config(text=f"{emotion.capitalize()} ({emotion_confidence:.1f}%)")
             
             # For race, use dominant_race and its confidence from the race dict
             race = result.get('dominant_race', 'N/A')
-            race_confidence = result.get('race', {}).get(race, 0)
+            race_confidence = result.get('race', {}).get(race, 0) if result.get('race') else 0
             self.race_value.config(text=f"{race.capitalize()} ({race_confidence:.1f}%)")
             
             # Change capture button to "Clear Image"
@@ -682,7 +741,7 @@ class CameraFrame(ttk.Frame):
         """
         Show all analysis results in a new window.
         """
-        if not self.analysis_result:
+        if not self.analysis_result or not isinstance(self.analysis_result, dict):
             return
             
         # Create a new top-level window

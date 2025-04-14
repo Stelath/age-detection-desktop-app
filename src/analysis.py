@@ -238,10 +238,12 @@ class FaceAnalyzer:
             # For this application, we'll focus on the first face detected
             if result and isinstance(result, list) and len(result) > 0:
                 return result[0]
-            return None
+            else:
+                print("No faces detected in the image.")
+                return None
             
         except Exception as e:
-            # This likely means no face was detected
+            # This likely means no face was detected or another error occurred
             print(f"Analysis error: {str(e)}")
             return None
     

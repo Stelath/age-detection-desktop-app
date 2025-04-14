@@ -4,7 +4,7 @@ Camera module for handling webcam access and image capture.
 import cv2
 import threading
 import time
-from typing import Tuple, Optional, Callable, Any
+from typing import Tuple, Optional, Callable, Any, List, Dict
 from pathlib import Path
 import numpy as np
 from PIL import Image, ImageTk
@@ -159,3 +159,47 @@ class Camera:
         Clean up resources when the object is destroyed.
         """
         self.stop()
+        
+    @staticmethod
+    def get_available_cameras(max_cameras: int = 10) -> List[Dict[str, any]]:
+        """
+        Get a list of available cameras.
+        
+        Args:
+            max_cameras: Maximum number of cameras to check
+            
+        Returns:
+            List of dictionaries containing camera information
+        """
+        available_cameras = []
+        
+        # Try to open each camera index and check if it works
+        for i in range(max_cameras):
+            cap = cv2.VideoCapture(i)
+            if cap.isOpened():
+                # Get camera name if possible
+                camera_name = f"Camera {i}"
+                
+                # On some systems, we can get the camera name
+                try:
+                    # This might not work on all platforms
+                    backend = cv2.CAP_ANY
+                    camera_name = cap.getBackendName()
+                    if not camera_name:
+                        camera_name = f"Camera {i}"
+                except:
+                    pass
+                
+                available_cameras.append({
+                    "id": i,
+                    "name": camera_name
+                })
+                
+                # Release the camera
+                cap.release()
+            else:
+                # If we can't open this index, we've likely reached the end of available cameras
+                if i > 0:  # Skip breaking on the first camera to handle cases where camera 0 is not available
+                    break
+        
+        return available_cameras
